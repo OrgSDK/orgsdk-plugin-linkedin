@@ -1,0 +1,40 @@
+{
+	"$schema": "https://orgsdk.ai/schemas/plugin-manifest.v1.json",
+	"name": "linkedin",
+	"version": "1.0.2",
+	"description": "LinkedIn posting and analytics: personal and organization page posts, engagement metrics",
+	"entry": "index.ts",
+	"auth": {
+		"type": "oauth2",
+		"provider": "linkedin-oauth",
+		"label": "LinkedIn OAuth",
+		"hint": "Create a LinkedIn OAuth app at developer.linkedin.com; scopes cover profile, member + organization social posting, and org admin. Supports multi-account via credentialName.",
+		"scopes": [
+			"r_liteprofile",
+			"r_emailaddress",
+			"w_member_social",
+			"r_organization_social",
+			"w_organization_social",
+			"r_organization_admin"
+		],
+		"callbackPath": "/callback"
+	},
+	"marketplace": {
+		"displayName": "LinkedIn",
+		"category": "Social",
+		"tagline": "Publish to LinkedIn and track engagement from agent workflows — personal or organization page posts and analytics.",
+		"tags": ["social", "posting", "analytics"],
+		"useCases": [
+			"Publish posts to a personal profile or organization page",
+			"Schedule a content queue across pages",
+			"Track post engagement and impressions",
+			"Manage organization content as an admin"
+		],
+		"permissionsSummary": "Post, delete, and read analytics for LinkedIn content via OAuth. Posting and deleting are public, mutating actions; deletes are irreversible.",
+		"links": {
+			"homepage": "https://www.linkedin.com",
+			"docs": "https://learn.microsoft.com/linkedin/marketing",
+			"sourceRepo": "https://github.com/OrgSDK/orgsdk-plugin-linkedin"
+		}
+	}
+}
