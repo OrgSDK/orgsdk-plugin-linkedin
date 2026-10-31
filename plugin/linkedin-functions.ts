@@ -1,4 +1,5 @@
 import type { SafeFunction } from "@orgsdk/plugins";
+import { fetchJson } from "./http-client";
 import { getLinkedInAccessToken } from "./oauth";
 
 export const moduleDescription =
@@ -48,24 +49,16 @@ async function liFetch(
 
 	const headers: Record<string, string> = {
 		Authorization: `Bearer ${accessToken}`,
-		"LinkedIn-Version": "202501",
+		"LinkedIn-Version": "202610",
+		"X-Restli-Protocol-Version": "2.0.0",
 		"Content-Type": "application/json",
 	};
 
-	const resp = await fetch(url, {
+	return fetchJson(url, {
 		method: options?.method ?? "GET",
 		headers,
 		body: options?.body ? JSON.stringify(options.body) : undefined,
 	});
-
-	if (!resp.ok) {
-		const errText = await resp.text();
-		throw new Error(`LinkedIn API error ${resp.status}: ${errText}`);
-	}
-
-	// Some endpoints return 204 No Content
-	if (resp.status === 204) return null;
-	return resp.json();
 }
 
 // ─── Safe Functions ─────────────────────────────────────────────────────
@@ -79,20 +72,16 @@ export const safeFunctions: SafeFunction[] = [
 			credentials: Record<string, unknown>,
 		): Promise<LinkedInProfile> => {
 			const accessToken = await getLinkedInAccessToken(credentials);
-			const data = await liFetch(accessToken, "/me");
+			const data = await liFetch(
+				accessToken,
+				"https://api.linkedin.com/v2/userinfo",
+			);
 
 			return {
-				id: data.id,
-				urn: `urn:li:person:${data.id}`,
-				name:
-					[data.localizedFirstName, data.localizedLastName]
-						.filter(Boolean)
-						.join(" ") ?? "Unknown",
-				headline: data.headline ?? undefined,
-				profilePicture:
-					data.profilePicture?.displayImageContentVectors?.[0]
-						?.fileIdentifyingUrlVectorElement?.[0]?.identifiers?.[0]
-						?.identifier ?? undefined,
+				id: data.sub,
+				urn: `urn:li:person:${data.sub}`,
+				name: data.name,
+				profilePicture: data.picture,
 			};
 		},
 		description:
@@ -136,11 +125,11 @@ export const safeFunctions: SafeFunction[] = [
 			const accessToken = await getLinkedInAccessToken(credentials);
 			const data = await liFetch(
 				accessToken,
-				"/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+				"/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
 			);
 
 			const orgUrns: string[] = (data.elements ?? []).map(
-				(e: { organizationalTarget?: string }) => e.organizationalTarget ?? "",
+				(e: { organization?: string }) => e.organization ?? "",
 			);
 
 			const orgs: LinkedInOrganization[] = [];
@@ -148,7 +137,7 @@ export const safeFunctions: SafeFunction[] = [
 				try {
 					const orgData = await liFetch(
 						accessToken,
-						`/orgs/${urn.split(":").pop()}`,
+						`/organizations/${urn.split(":").pop()}`,
 					);
 					orgs.push({
 						id: orgData.id,
@@ -220,8 +209,11 @@ export const safeFunctions: SafeFunction[] = [
 			// Default to personal profile if no authorUrn provided
 			let resolvedAuthorUrn = authorUrn;
 			if (!resolvedAuthorUrn) {
-				const profile = await liFetch(accessToken, "/me");
-				resolvedAuthorUrn = `urn:li:person:${profile.id}`;
+				const profile = await liFetch(
+					accessToken,
+					"https://api.linkedin.com/v2/userinfo",
+				);
+				resolvedAuthorUrn = `urn:li:person:${profile.sub}`;
 			}
 
 			const post: Record<string, unknown> = {
@@ -239,15 +231,10 @@ export const safeFunctions: SafeFunction[] = [
 			// Add article/link attachment if provided
 			if (linkUrl) {
 				post.content = {
-					contentCallToAction: {
-						callToActionType: "VISIT_URL",
-						url: linkUrl,
-					},
 					article: {
 						source: linkUrl,
 						title: linkTitle ?? "",
 						description: linkDescription ?? "",
-						thumbnail: [],
 					},
 				};
 			}
@@ -258,7 +245,9 @@ export const safeFunctions: SafeFunction[] = [
 			});
 
 			// Extract post URN from the response header or response body
-			const postId = result?.id ?? result?.postId ?? "unknown";
+			const postId = result?.id;
+			if (typeof postId !== "string" || !postId.startsWith("urn:li:"))
+				throw new Error("INVALID_POST_RESPONSE");
 
 			return {
 				id: postId,
@@ -363,7 +352,10 @@ await linkedin.createPost({
 		requiredCredentials: ["linkedin-oauth"],
 		handler: async (
 			credentials: Record<string, unknown>,
-			{ postUrn }: { postUrn: string },
+			{
+				postUrn,
+				organizationUrn,
+			}: { postUrn: string; organizationUrn: string },
 		): Promise<{
 			impressions: number;
 			uniqueImpressions: number;
@@ -375,32 +367,29 @@ await linkedin.createPost({
 		}> => {
 			const accessToken = await getLinkedInAccessToken(credentials);
 
-			const data = await liFetch(accessToken, `/socialActions/${postUrn}`);
-
-			// Get engagement metrics
-			const likes = data.likesSummary?.totalLikes ?? 0;
-			const comments = data.commentsSummary?.aggregatedTotalComments ?? 0;
-			const reposts =
-				data.urnsTotalReshares ?? data.likesSummary?.totalLikes ?? 0;
-
-			// Attempt to get impression stats (requires org URN or post URN)
-			let impressions = 0;
-			let uniqueImpressions = 0;
-			let clicks = 0;
-			try {
-				const statsResp = await liFetch(
-					accessToken,
-					`/analytics/postShares/${postUrn}`,
+			if (
+				!/^urn:li:organization:[0-9]+$/.test(organizationUrn) ||
+				!/^urn:li:(share|ugcPost):[0-9]+$/.test(postUrn)
+			)
+				throw new Error(
+					"Provide an organization URN and its post URN for organization analytics.",
 				);
-				impressions =
-					statsResp?.elements?.[0]?.totalShareStatistics?.impressions ?? 0;
-				uniqueImpressions =
-					statsResp?.elements?.[0]?.totalShareStatistics?.uniqueImpressions ??
-					0;
-				clicks = statsResp?.elements?.[0]?.totalShareStatistics?.clicks ?? 0;
-			} catch {
-				// Impression analytics may require organization context
-			}
+			const postFilter = postUrn.startsWith("urn:li:ugcPost:")
+				? "ugcPosts"
+				: "shares";
+			const query = `q=organizationalEntity&organizationalEntity=${encodeURIComponent(organizationUrn)}&${postFilter}=List(${encodeURIComponent(postUrn)})`;
+			const response = await liFetch(
+				accessToken,
+				`/organizationalEntityShareStatistics?${query}`,
+			);
+			const stats = response?.elements?.[0]?.totalShareStatistics;
+			if (!stats) throw new Error("ANALYTICS_UNAVAILABLE");
+			const impressions = stats.impressionCount ?? 0;
+			const uniqueImpressions = stats.uniqueImpressionsCount ?? 0;
+			const clicks = stats.clickCount ?? 0;
+			const likes = stats.likeCount ?? 0;
+			const comments = stats.commentCount ?? 0;
+			const reposts = stats.shareCount ?? 0;
 
 			const engagementRate =
 				impressions > 0
@@ -418,10 +407,13 @@ await linkedin.createPost({
 			};
 		},
 		description:
-			"Get analytics (impressions, likes, comments, reposts, clicks, engagement rate) for a LinkedIn post.",
+			"Get organization post analytics. Requires the organization URN and approved Community Management access; personal post impressions are not supported.",
 		returnType:
 			"Promise<{ impressions: number; uniqueImpressions: number; likes: number; comments: number; reposts: number; clicks: number; engagementRate: number }>",
-		parameters: [{ name: "postUrn", type: "string" }],
+		parameters: [
+			{ name: "postUrn", type: "string" },
+			{ name: "organizationUrn", type: "string" },
+		],
 		metadata: {
 			category: "linkedin",
 			tags: ["readonly", "analytics"],

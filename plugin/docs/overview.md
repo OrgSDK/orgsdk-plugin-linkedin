@@ -1,3 +1,13 @@
+# Current execution contract
+
+The API version is `202610`; identity uses OpenID Connect `openid profile email` and `/v2/userinfo`. Posting requires the approved social scopes. `getPostAnalytics({postUrn, organizationUrn})` requires organization access and reports organic organization statistics. It does not report personal-profile impressions. Community Management approval is a provider prerequisite.
+
+Native OAuth providers receive only `{source: "byo", secret_accessToken}`. The host owns refresh. The first-party relay is retired.
+
+## Historical source reference
+
+The following describes the former author-source host; current npm and native credential behaviour above takes precedence.
+
 # LinkedIn
 
 Post to LinkedIn — personal profile and organization pages — and pull

@@ -15,9 +15,9 @@ describe("manifest", () => {
 		expect(m.name).toBe("linkedin");
 	});
 
-	it("has the bumped version 1.0.2", async () => {
+	it("has the bumped version 1.0.3", async () => {
 		const m = await readManifest();
-		expect(m.version).toBe("1.0.2");
+		expect(m.version).toBe("1.0.3");
 	});
 
 	it("declares the canonical $schema", async () => {
@@ -49,16 +49,17 @@ describe("manifest", () => {
 	// docs/overview.md). The migration froze behavior byte-for-byte; a
 	// LinkedIn OpenID-scope modernization is a separate, deliberate change and
 	// must not be smuggled into this extraction (skill learning #10).
-	it("declares the exact LinkedIn OAuth 2.0 scopes (frozen legacy set)", async () => {
+	it("declares the current OIDC and social scopes", async () => {
 		const m = await readManifest();
 		const auth = m.auth as { scopes: string[] };
 		expect(auth.scopes).toEqual([
-			"r_liteprofile",
-			"r_emailaddress",
+			"openid",
+			"profile",
+			"email",
 			"w_member_social",
 			"r_organization_social",
 			"w_organization_social",
-			"r_organization_admin",
+			"rw_organization_admin",
 		]);
 	});
 
