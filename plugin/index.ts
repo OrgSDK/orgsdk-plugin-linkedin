@@ -7,12 +7,13 @@ import { LinkedInAuthProvider } from "./auth-provider";
 import { safeFunctions } from "./linkedin-functions";
 
 const DEFAULT_SCOPES = [
-	"r_liteprofile",
-	"r_emailaddress",
+	"openid",
+	"profile",
+	"email",
 	"w_member_social",
 	"r_organization_social",
 	"w_organization_social",
-	"r_organization_admin",
+	"rw_organization_admin",
 ];
 
 const createPlugin: PluginFactory = (ctx: PluginContext): PluginModule => {
